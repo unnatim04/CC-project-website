@@ -1,5 +1,16 @@
 import express from 'express'; import cors from 'cors'; import dotenv from 'dotenv'; import mongoose from 'mongoose'; import {randomBytes,scryptSync,timingSafeEqual} from 'crypto'; import {products} from '../../frontend/src/data/product-catalog.js'; import {Order,User} from './database-models.js'; dotenv.config();
 const app=express(); app.use(cors()); app.use(express.json());
+app.use(async (req, res, next) => {
+  try {
+    if (process.env.MONGODB_URI && mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
+    next();
+  } catch (err) {
+    console.error('DB connection failed:', err.message);
+    next(); // still proceed, but readyState check in routes will catch it
+  }
+});
 const hashPassword=password=>{const salt=randomBytes(16).toString('hex'); const hash=scryptSync(password,salt,64).toString('hex'); return `${salt}:${hash}`};
 const verifyPassword=(password,stored)=>{const [salt,key]=String(stored||'').split(':'); if(!salt||!key)return false; const hash=scryptSync(password,salt,64); const saved=Buffer.from(key,'hex'); return saved.length===hash.length&&timingSafeEqual(saved,hash)};
 app.get('/api/health',(req,res)=>res.json({status:'ok',mode:mongoose.connection.readyState===1?'mongodb':'demo'}));
@@ -21,17 +32,6 @@ function connectDB() {
   return dbReady;
 }
 
-app.use(async (req, res, next) => {
-  try {
-    if (process.env.MONGODB_URI && mongoose.connection.readyState !== 1) {
-      await connectDB();
-    }
-    next();
-  } catch (err) {
-    console.error('DB connection failed:', err.message);
-    next(); // still proceed, but readyState check in routes will catch it
-  }
-});
 if (process.env.NODE_ENV !== 'production') {
     const port = Number(process.env.PORT || 5000);
     app.listen(port, () => console.log(`Luma API running on http://localhost:${port}`));
