@@ -11,8 +11,27 @@ app.post('/api/cart',(req,res)=>res.status(201).json({message:'Cart item stored 
 app.post('/api/orders',async(req,res)=>{const orderNumber=`MM-${Date.now().toString().slice(-7)}`; try { if(mongoose.connection.readyState===1){const order=await Order.create({orderNumber,...req.body}); return res.status(201).json({orderId:order._id,orderNumber:order.orderNumber,status:order.status,storedIn:'MongoDB'});} return res.status(201).json({orderNumber,status:'confirmed',storedIn:'browser demo'}); }catch(error){console.error('Order save error:',error.message);res.status(500).json({message:'Could not save order',error:error.message});}});
 app.get('/api/orders',async(req,res)=>{try{if(mongoose.connection.readyState!==1)return res.json([]);res.json(await Order.find().sort({createdAt:-1}).lean());}catch(error){res.status(500).json({message:error.message});}});
 app.get('/api/orders/:id',async(req,res)=>{try{if(mongoose.connection.readyState!==1)return res.json({orderNumber:req.params.id,status:'demo'});res.json(await Order.findOne({$or:[{_id:mongoose.isValidObjectId(req.params.id)?req.params.id:null},{orderNumber:req.params.id}]}).lean());}catch(error){res.status(500).json({message:error.message});}});
-if(process.env.MONGODB_URI) mongoose.connect(process.env.MONGODB_URI).then(()=>console.log('MongoDB connected')).catch(e=>console.warn('MongoDB unavailable; demo mode:',e.message));
+let dbReady = null;
+function connectDB() {
+  if (!dbReady) {
+    dbReady = mongoose.connect(process.env.MONGODB_URI)
+      .then(() => console.log('MongoDB connected'))
+      .catch((err) => { dbReady = null; throw err; });
+  }
+  return dbReady;
+}
 
+app.use(async (req, res, next) => {
+  try {
+    if (process.env.MONGODB_URI && mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
+    next();
+  } catch (err) {
+    console.error('DB connection failed:', err.message);
+    next(); // still proceed, but readyState check in routes will catch it
+  }
+});
 if (process.env.NODE_ENV !== 'production') {
     const port = Number(process.env.PORT || 5000);
     app.listen(port, () => console.log(`Luma API running on http://localhost:${port}`));
